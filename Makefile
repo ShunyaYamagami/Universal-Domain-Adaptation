@@ -11,6 +11,8 @@ create_env:
 	conda run -n $(ENV_NAME) pip install -r requirements.txt
 	@echo "Copying directories..."
 	cp -r /nas/data/syamagami/GDA/data/GDA_DA_methods/data ./
+	mv ./data/Office31 ./data/office
+	cp -r /nas/data/syamagami/GDA/data/GDA_DA_methods/Universal-Domain-Adaptation/pretrained_models ./
 
 # remove_envターゲット: condaの環境を削除
 remove_env:
