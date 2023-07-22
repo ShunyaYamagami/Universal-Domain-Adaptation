@@ -1,21 +1,22 @@
 data:
   dataset:
     name: officehome # choices are ['office', 'officehome', 'caltech-imagenet', 'visda2017']
-    root_path: /home/youkaichao/data/Office_Home # /path/to/dataset/root
+    root_path: /nas/data/syamagami/GDA/data/OfficeHome # /path/to/dataset/root
+    txt_root: data/officehome/simclr_rpl_dim128_wght0.5_bs512_ep3000_g3_encoder_outdim64_shfl
     source: 0 # source domain index
     target: 1 # target domain index
-    n_share: 10 # number of classes to be shared
-    n_source_private: 5 # number of classes in source private domain
+    # n_share: 10 # number of classes to be shared
+    # n_source_private: 5 # number of classes in source private domain
     n_total: 65 # number of classes in total
 
   dataloader:
     class_balance: true #
     data_workers: 3 # how many workers to use for train dataloaders
-    batch_size: 36 # batch_size for source domain and target domain respectively
+    batch_size: 48 # batch_size for source domain and target domain respectively
 
 model:
   base_model: resnet50 # choices=['resnet50', 'vgg16']
-  pretrained_model: /home/youkaichao/data/pytorchModels/resnet50.pth # /path/to/pretrained/model
+  pretrained_model: pretrained_models/resnet50_pretrained.pth # /path/to/pretrained/model
 
 train:
   min_step: 40000 # minimum steps to run. run epochs until it exceeds the minStep

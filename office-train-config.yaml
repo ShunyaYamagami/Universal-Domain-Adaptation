@@ -1,21 +1,22 @@
 data:
   dataset:
     name: office # choices are ['office', 'officehome', 'caltech-imagenet', 'visda2017']
-    root_path: data/office # /path/to/dataset/root
+    root_path: /nas/data/syamagami/GDA/data/Office31 # /path/to/dataset/root
+    txt_root: data/office/simclr_rpl_dim512_wght0.8_bs512_ep300_g3_encoder_outdim64_shfl
     source: 0 # source domain index
     target: 1 # target domain index
-    n_share: 10 # number of classes to be shared
-    n_source_private: 10 # number of classes in source private domain
+    # n_share: 10 # number of classes to be shared
+    # n_source_private: 10 # number of classes in source private domain
     n_total: 31 # number of classes in total
 
   dataloader:
     class_balance: true #
     data_workers: 3 # how many workers to use for train dataloaders
-    batch_size: 36 # batch_size for source domain and target domain respectively
+    batch_size: 48 # batch_size for source domain and target domain respectively
 
 model:
   base_model: resnet50 # choices=['resnet50', 'vgg16']
-  pretrained_model: /workspace/fubo/resnet50.pth # /path/to/pretrained/model
+  pretrained_model: pretrained_models/resnet50_pretrained.pth # /path/to/pretrained/model
 
 train:
   min_step: 20000 # minimum steps to run. run epochs until it exceeds the minStep

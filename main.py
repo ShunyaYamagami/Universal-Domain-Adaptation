@@ -10,21 +10,38 @@ from tensorboardX import SummaryWriter
 import torch.backends.cudnn as cudnn
 cudnn.benchmark = True
 cudnn.deterministic = True
+import os
+import torch
+import numpy as np
 
 seed_everything()
 
-if args.misc.gpus < 1:
-    import os
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
-    gpu_ids = []
-    output_device = torch.device('cpu')
-else:
-    gpu_ids = select_GPUs(args.misc.gpus)
-    output_device = gpu_ids[0]
+# import logging
+# from set_logger import set_logger
+# from datetime import datetime
+# now = datetime.now().strftime("%y%m%d_%H:%M:%S")
+# fstem = f'{now}'
+# os.makedirs('./logs', exist_ok=True)
+# set_logger(f"./logs/{fstem}.log")
+# logger = logging.getLogger(__name__)
 
-now = datetime.datetime.now().strftime('%b%d_%H-%M-%S')
+# if args.misc.gpus < 1:
+#     import os
+#     os.environ["CUDA_VISIBLE_DEVICES"] = ""
+#     gpu_ids = []
+#     output_device = torch.device('cpu')
+# else:
+#     gpu_ids = select_GPUs(args.misc.gpus)
+#     output_device = gpu_ids[0]
+output_device = torch.device('cuda')
 
-log_dir = f'{args.log.root_dir}/{now}'
+# now = datetime.datetime.now().strftime('%b%d_%H-%M-%S')
+# log_dir = f'{args.log.root_dir}/{now}'
+cuda_visible_devices = list(map(int, os.environ.get('CUDA_VISIBLE_DEVICES').split(",")))
+exec_num = int(os.environ.get('exec_num'))
+now = datetime.datetime.now().strftime("%y%m%d_%H:%M:%S")
+os.makedirs(f'{args.log.root_dir}/{args.data.dataset.name}', exist_ok=True)
+log_dir = f'{args.log.root_dir}/{args.data.dataset.name}/{now}--c{cuda_visible_devices[0]}n{exec_num}--{dataset.domains[args.data.dataset.source][0]}{dataset.domains[args.data.dataset.target][0]}--{args.data.dataset.txt_root}'
 
 logger = SummaryWriter(log_dir)
 
@@ -56,10 +73,14 @@ class TotalNet(nn.Module):
 
 totalNet = TotalNet()
 
-feature_extractor = nn.DataParallel(totalNet.feature_extractor, device_ids=gpu_ids, output_device=output_device).train(True)
-classifier = nn.DataParallel(totalNet.classifier, device_ids=gpu_ids, output_device=output_device).train(True)
-discriminator = nn.DataParallel(totalNet.discriminator, device_ids=gpu_ids, output_device=output_device).train(True)
-discriminator_separate = nn.DataParallel(totalNet.discriminator_separate, device_ids=gpu_ids, output_device=output_device).train(True)
+# feature_extractor = nn.DataParallel(totalNet.feature_extractor, device_ids=gpu_ids, output_device=output_device).train(True)
+# classifier = nn.DataParallel(totalNet.classifier, device_ids=gpu_ids, output_device=output_device).train(True)
+# discriminator = nn.DataParallel(totalNet.discriminator, device_ids=gpu_ids, output_device=output_device).train(True)
+# discriminator_separate = nn.DataParallel(totalNet.discriminator_separate, device_ids=gpu_ids, output_device=output_device).train(True)
+feature_extractor = totalNet.feature_extractor.cuda()
+classifier = totalNet.classifier.cuda()
+discriminator = totalNet.discriminator.cuda()
+discriminator_separate = totalNet.discriminator_separate.cuda()
 
 if args.test.test_only:
     assert os.path.exists(args.test.resume_file)
@@ -112,7 +133,7 @@ if args.test.test_only:
     acc_tests = [x.reportAccuracy() for x in counters if not np.isnan(x.reportAccuracy())]
     acc_test = torch.ones(1, 1) * np.mean(acc_tests)
     print(f'test accuracy is {acc_test.item()}')
-    exit(0)
+    # exit(0)
 
 # ===================optimizer
 scheduler = lambda step, initial_lr: inverseDecaySheduler(step, initial_lr, gamma=10, power=0.75, max_iter=10000)
@@ -140,13 +161,14 @@ while global_step < args.train.min_step:
     iters = tqdm(zip(source_train_dl, target_train_dl), desc=f'epoch {epoch_id} ', total=min(len(source_train_dl), len(target_train_dl)))
     epoch_id += 1
 
-    for i, ((im_source, label_source), (im_target, label_target)) in enumerate(iters):
-
+    for i, ((im_source, label_source, domain_source), (im_target, label_target, domain_target)) in enumerate(iters):
         save_label_target = label_target  # for debug usage
 
         label_source = label_source.to(output_device)
         label_target = label_target.to(output_device)
         label_target = torch.zeros_like(label_target)
+        domain_source = domain_source.unsqueeze(-1).float().to(output_device)
+        domain_target = domain_target.unsqueeze(-1).float().to(output_device)
 
         # =========================forward pass
         im_source = im_source.to(output_device)
@@ -173,13 +195,17 @@ while global_step < args.train.min_step:
         adv_loss = torch.zeros(1, 1).to(output_device)
         adv_loss_separate = torch.zeros(1, 1).to(output_device)
 
-        tmp = source_share_weight * nn.BCELoss(reduction='none')(domain_prob_discriminator_source, torch.ones_like(domain_prob_discriminator_source))
+        # tmp = source_share_weight * nn.BCELoss(reduction='none')(domain_prob_discriminator_source, torch.ones_like(domain_prob_discriminator_source))
+        tmp = source_share_weight * nn.BCELoss(reduction='none')(domain_prob_discriminator_source, domain_source)
         adv_loss += torch.mean(tmp, dim=0, keepdim=True)
-        tmp = target_share_weight * nn.BCELoss(reduction='none')(domain_prob_discriminator_target, torch.zeros_like(domain_prob_discriminator_target))
+        # tmp = target_share_weight * nn.BCELoss(reduction='none')(domain_prob_discriminator_target, torch.zeros_like(domain_prob_discriminator_target))
+        tmp = target_share_weight * nn.BCELoss(reduction='none')(domain_prob_discriminator_target, domain_target)
         adv_loss += torch.mean(tmp, dim=0, keepdim=True)
 
-        adv_loss_separate += nn.BCELoss()(domain_prob_discriminator_source_separate, torch.ones_like(domain_prob_discriminator_source_separate))
-        adv_loss_separate += nn.BCELoss()(domain_prob_discriminator_target_separate, torch.zeros_like(domain_prob_discriminator_target_separate))
+        # adv_loss_separate += nn.BCELoss()(domain_prob_discriminator_source_separate, torch.ones_like(domain_prob_discriminator_source_separate))
+        # adv_loss_separate += nn.BCELoss()(domain_prob_discriminator_target_separate, torch.zeros_like(domain_prob_discriminator_target_separate))
+        adv_loss_separate += nn.BCELoss()(domain_prob_discriminator_source_separate, domain_source)
+        adv_loss_separate += nn.BCELoss()(domain_prob_discriminator_target_separate, domain_target)
 
         # ============================== cross entropy loss
         ce = nn.CrossEntropyLoss(reduction='none')(predict_prob_source, label_source)
@@ -209,9 +235,10 @@ while global_step < args.train.min_step:
                  Accumulator(['feature', 'predict_prob', 'label', 'domain_prob', 'before_softmax', 'target_share_weight']) as target_accumulator, \
                  torch.no_grad():
 
-                for i, (im, label) in enumerate(tqdm(target_test_dl, desc='testing ')):
+                for i, (im, label, domains) in enumerate(tqdm(target_test_dl, desc='testing ')):
                     im = im.to(output_device)
                     label = label.to(output_device)
+                    domains = domains.to(output_device)
 
                     feature = feature_extractor.forward(im)
                     feature, __, before_softmax, predict_prob = classifier.forward(feature)
@@ -248,8 +275,12 @@ while global_step < args.train.min_step:
             acc_tests = [x.reportAccuracy() for x in counters if not np.isnan(x.reportAccuracy())]
             acc_test = torch.ones(1, 1) * np.mean(acc_tests)
 
+            print(f'{global_step}\tacc_test: {acc_test.item() * 100:.4f}%')
+            with open(join(log_dir, 'log.txt'), 'a') as f:
+                f.write(f'{global_step}\tacc_test: {acc_test.item() * 100:.4f}%\n')
+
             logger.add_scalar('acc_test', acc_test, global_step)
-            clear_output()
+            # clear_output()
 
             data = {
                 "feature_extractor": feature_extractor.state_dict(),
